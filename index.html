@@ -31,7 +31,7 @@
 
   <div class="card">
     <h2>👥 玩家管理</h2>
-    <p style="color:#B8A9C9; margin-bottom:8px;">点击名字标记为"常玩成员"（各人手机独立设置）</p>
+    <p style="color:#B8A9C9; margin-bottom:8px;">点击名字标记为“常玩成员”（各人手机独立设置）</p>
     <div id="playerList"></div>
   </div>
 
@@ -80,22 +80,23 @@
   </div>
 
   <script>
-    // ========== 🔧 配置 ==========
-    // 重要！请把下面这个地址换成你 Cloudflare Worker 的地址
-    const PROXY_URL = 'falling-wind-209d.1448755660.workers.dev';
+    // ========== 代理地址（你的 Cloudflare Worker） ==========
+    const PROXY_URL = 'https://falling-wind-209d.1448755660.workers.dev';
 
+    // 飞书配置
     const FEISHU = {
       baseId: 'KUFywjulLiHK0ckJuHDcM2hynko',
       tableId: 'tblI5guGXQAkzcNj',
-      // token 不再暴露在客户端，但为了简单我们仍放在这里（确保 Proxy 安全）
       token: 'pt-e-ny4SxNCio9i8Flr3ZnuRMdZldfptB7ZuYR8GmdAQAABIBAVNXLQwRQR9jR'
     };
 
+    // 11 位玩家
     const defaultPlayers = [
       "蒋楚", "毛欢", "仇俊", "邓亮", "刘思源", "刘俊",
       "焦嘉勇", "沈钰莹", "胡辉祥", "蔺雨欣", "包沁禾"
     ];
 
+    // 角色阵营映射
     const ROLE_MAP = {
       '梅林': '好人', '派西维尔': '好人', '平民': '好人',
       '莫甘娜': '坏人', '刺客': '坏人', '奥伯伦': '坏人',
@@ -104,6 +105,7 @@
     const GOOD_ROLES = Object.keys(ROLE_MAP).filter(r => ROLE_MAP[r] === '好人');
     const BAD_ROLES = Object.keys(ROLE_MAP).filter(r => ROLE_MAP[r] === '坏人');
 
+    // 本地玩家数据
     let players = JSON.parse(localStorage.getItem('avalon_players')) ||
       defaultPlayers.map((name, idx) => ({ id: idx, name, regular: true }));
     if (players.length === defaultPlayers.length) {
@@ -117,6 +119,7 @@
     function savePlayers() { localStorage.setItem('avalon_players', JSON.stringify(players)); }
     function getPlayer(id) { return players.find(p => p.id === id); }
 
+    // ========== UI 更新 ==========
     function renderPlayerList() {
       document.getElementById('playerList').innerHTML = players.map(p => `
         <span class="player-chip ${p.regular ? 'active' : ''}" onclick="togglePlayer(${p.id})">
@@ -126,6 +129,7 @@
       updateRoleAssignments();
       renderPlayerSelect();
     }
+
     function togglePlayer(id) {
       const p = players.find(p => p.id === id);
       if (p) p.regular = !p.regular;
@@ -133,6 +137,7 @@
       renderPlayerList();
       renderAllStats();
     }
+
     function updateRoleAssignments() {
       const actives = players.filter(p => p.regular);
       document.getElementById('roleAssignment').innerHTML = actives.map(p => `
@@ -140,12 +145,13 @@
           <label>${p.name}</label>
           <select id="role_${p.id}">
             <option value="">-- 选择身份 --</option>
-            ${GOOD_ROLES.map(r => `<option value="${r}">${r}</option>`).join('')}
-            ${BAD_ROLES.map(r => `<option value="${r}">${r}</option>`).join('')}
+            ${GOOD_ROLES.map(r => `<option value="${r}">${r} (好人)</option>`).join('')}
+            ${BAD_ROLES.map(r => `<option value="${r}">${r} (坏人)</option>`).join('')}
           </select>
         </div>
       `).join('');
     }
+
     function renderPlayerSelect() {
       const sel = document.getElementById('playerSelect');
       const actives = players.filter(p => p.regular);
@@ -153,8 +159,8 @@
         actives.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     }
 
-    // ========== 所有飞书请求都通过代理 ==========
-    async function fetchFromFeishu(path, method = 'GET', body = null) {
+    // ========== 通过代理 Worker 请求飞书 API ==========
+    async function requestFeishu(path, method = 'GET', body = null) {
       const url = `${PROXY_URL}/open-apis/bitable/v1/apps/${FEISHU.baseId}/tables/${FEISHU.tableId}/${path}`;
       const options = {
         method,
@@ -178,7 +184,7 @@
         do {
           let path = `records?page_size=200`;
           if (pageToken) path += `&page_token=${pageToken}`;
-          const data = await fetchFromFeishu(path);
+          const data = await requestFeishu(path);
           allRecords = allRecords.concat(data.data.items || []);
           pageToken = data.data.has_more ? data.data.page_token : null;
         } while (pageToken);
@@ -206,7 +212,7 @@
     }
 
     async function addGameToFeishu(gameData) {
-      return fetchFromFeishu('records', 'POST', {
+      return requestFeishu('records', 'POST', {
         fields: {
           '日期': gameData.date,
           '获胜阵营': gameData.winner,
@@ -216,7 +222,7 @@
       });
     }
 
-    // ========== 战力计算（与之前相同） ==========
+    // ========== 战力计算（真实阵营） ==========
     function calculateELO() {
       const eloMap = {};
       players.forEach(p => eloMap[p.id] = 1000);
@@ -289,6 +295,7 @@
       renderPlayerSelect();
     }
 
+    // 个人详情
     document.getElementById('playerSelect').addEventListener('change', (e) => {
       const id = parseInt(e.target.value);
       if (isNaN(id)) { document.getElementById('playerDetail').innerHTML = ''; return; }
@@ -299,7 +306,7 @@
       const total = st.total;
       document.getElementById('playerDetail').innerHTML = `
         <h3 style="color:#FFD700;">${p.name}</h3>
-        <p>📅 总场次(有效): <strong>${total}</strong></p>
+        <p>📅 有效对局: <strong>${total}</strong></p>
         <p>🏆 综合胜率: <strong>${total ? (st.wins/total*100).toFixed(1) : '0.0'}%</strong></p>
         <p>🛡️ 好人胜率: <strong>${st.goodGames ? (st.goodWins/st.goodGames*100).toFixed(1) : '0.0'}%</strong> (${st.goodGames}局)</p>
         <p>🗡️ 坏人胜率: <strong>${st.badGames ? (st.badWins/st.badGames*100).toFixed(1) : '0.0'}%</strong> (${st.badGames}局)</p>
@@ -308,6 +315,7 @@
       `;
     });
 
+    // 记录对局
     document.getElementById('addGameBtn').addEventListener('click', async () => {
       const actives = players.filter(p => p.regular);
       if (actives.length < 5) return alert('至少需要5名活跃玩家');
@@ -324,6 +332,7 @@
       const playerNames = actives.map(p => p.name);
       try {
         await addGameToFeishu({ date, winner, players: playerNames, roles });
+        // 清空选项
         actives.forEach(p => {
           const sel = document.getElementById(`role_${p.id}`);
           if (sel) sel.value = '';
@@ -336,6 +345,7 @@
 
     document.getElementById('refreshBtn').addEventListener('click', fetchGames);
 
+    // 初始化
     document.getElementById('gameDate').valueAsDate = new Date();
     renderPlayerList();
     fetchGames();
