@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>阿瓦隆战绩 · 11人同步版</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#1A0F2A; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color:#FFF; padding:20px; max-width:800px; margin:auto; }
+    h1,h2 { color:#FFD700; margin-bottom:0.5em; }
+    .card { background: rgba(26,15,42,0.8); border:1px solid #7B5BA8; border-radius:12px; padding:20px; margin-bottom:20px; }
+    select,input,button { background:#1F1535; color:#FFF; border:1px solid #7B5BA8; border-radius:8px; padding:8px 12px; margin:4px 0; font-size:14px; }
+    button { background:#7B5BA8; font-weight:bold; cursor:pointer; border:none; }
+    button:hover { background:#FFD700; color:#1A0F2A; }
+    .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap:20px; }
+    .player-chip { display:inline-block; background:#2a1f3a; border:1px solid #5A4BFF; border-radius:20px; padding:6px 12px; margin:4px; cursor:pointer; }
+    .player-chip.active { background:#FFD700; color:#1A0F2A; border-color:#FFD700; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th,td { padding:10px 8px; border-bottom:1px solid #5A4BFF; text-align:center; }
+    th { color:#FFD700; }
+    .loading { color:#FFD700; text-align:center; padding:20px; }
+    @media (max-width:768px) { .grid-2col { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>⚔️ 阿瓦隆 · 11人同步战绩</h1>
+  <div id="status" class="loading">⏳ 正在连接飞书云端数据...</div>
+
+  <!-- 玩家管理 -->
+  <div class="card">
+    <h2>👥 玩家管理</h2>
+    <p style="color:#B8A9C9; margin-bottom:8px;">点击名字标记为"常玩成员"（各人手机独立设置）</p>
+    <div id="playerList"></div>
+  </div>
+
+  <!-- 新增对局 -->
+  <div class="card">
+    <h2>📝 记录新对局</h2>
+    <div class="grid-2col">
+      <div>
+        <label>日期：</label><br>
+        <input type="date" id="gameDate" />
+      </div>
+      <div>
+        <label>获胜阵营：</label><br>
+        <select id="winnerTeam">
+          <option value="好人">好人阵营 (蓝方)</option>
+          <option value="坏人">坏人阵营 (红方)</option>
+        </select>
+      </div>
+    </div>
+    <p style="margin-top:10px;"><strong>本局参与者（自动使用全部活跃玩家）：</strong></p>
+    <div id="selectedPlayers" style="margin:8px 0; color:#B8A9C9;"></div>
+    <button id="addGameBtn">✅ 记录这局（同步到云端）</button>
+    <button id="refreshBtn" style="margin-left:8px;">🔄 手动刷新</button>
+    <span style="margin-left:12px; font-size:12px; color:#6B5B8C;">共 <span id="totalGames">0</span> 场</span>
+  </div>
+
+  <!-- 战力排行 & 个人详情 -->
+  <div class="grid-2col">
+    <div class="card">
+      <h2>🏆 战力排行榜</h2>
+      <table>
+        <thead><tr><th>排名</th><th>玩家</th><th>场次</th><th>胜率</th><th>战力值</th></tr></thead>
+        <tbody id="rankBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>📊 个人统计详情</h2>
+      <select id="playerSelect" style="width:100%; margin-bottom:10px;">
+        <option value="">-- 选择玩家 --</option>
+      </select>
+      <div id="playerDetail"></div>
+    </div>
+  </div>
+
+  <!-- 最近对局 -->
+  <div class="card">
+    <h2>📋 最近10局记录（云端数据）</h2>
+    <div id="gameHistory" style="max-height:300px; overflow-y:auto;"></div>
+  </div>
+
+  <script>
+    // ========== 🔧 飞书配置（已填入你的信息） ==========
+    const FEISHU = {
+      baseId: 'KUFywjulLiHK0ckJuHDcM2hynko',
+      tableId: 'tblI5guGXQAkzcNj',
+      token: 'pt-e-ny4SxNCio9i8Flr3ZnuRMdZldfptB7ZuYR8GmdAQAABIBAVNXLQwRQR9jR'
+    };
+
+    // ========== 👥 11位玩家 ==========
+    const defaultPlayers = [
+      "蒋楚", "毛欢", "仇俊", "邓亮", "刘思源", "刘俊",
+      "焦嘉勇", "沈钰莹", "胡辉翔", "蔺雨欣", "包沁禾"
+    ];
+
+    // 为每个玩家创建数据对象
+    function createPlayerObj(name, idx) {
+      return { id: idx, name: name, regular: true };  // 默认全部常玩
+    }
+
+    // 从本地存储读取玩家设置（保存各人手机上的"常玩"标记）
+    let players = JSON.parse(localStorage.getItem('avalon_players'));
+    if (!players || players.length !== defaultPlayers.length) {
+      players = defaultPlayers.map((name, idx) => createPlayerObj(name, idx));
+    } else {
+      // 确保名字与默认一致（允许用户改名的话可跳过）
+      players.forEach((p, idx) => { p.name = defaultPlayers[idx]; });
+    }
+
+    // 云端对局缓存
+    let games = [];
+
+    // ---------- 本地玩家管理 ----------
+    function savePlayers() {
+      localStorage.setItem('avalon_players', JSON.stringify(players));
+    }
+
+    function getPlayer(id) { return players.find(p => p.id === id); }
+
+    function renderPlayerList() {
+      document.getElementById('playerList').innerHTML = players.map(p => `
+        <span class="player-chip ${p.regular ? 'active' : ''}" onclick="togglePlayer(${p.id})">
+          ${p.name} ${p.regular ? '✓' : ''}
+        </span>
+      `).join('');
+      updateSelectedPlayers();
+      renderPlayerSelect();
+    }
+
+    function togglePlayer(id) {
+      const p = players.find(p => p.id === id);
+      if (p) p.regular = !p.regular;
+      savePlayers();
+      renderPlayerList();
+      renderAllStats();
+    }
+
+    function updateSelectedPlayers() {
+      const actives = players.filter(p => p.regular);
+      document.getElementById('selectedPlayers').innerText = 
+        actives.length ? actives.map(p => p.name).join('、') : '未选择常玩成员';
+    }
+
+    function renderPlayerSelect() {
+      const sel = document.getElementById('playerSelect');
+      const actives = players.filter(p => p.regular);
+      sel.innerHTML = '<option value="">-- 选择玩家 --</option>' + 
+        actives.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    }
+
+    // ---------- 飞书 API 操作 ----------
+    async function fetchGames() {
+      document.getElementById('status').innerText = '🔄 正在从飞书拉取对局记录...';
+      let allRecords = [];
+      let pageToken = null;
+      try {
+        do {
+          let url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU.baseId}/tables/${FEISHU.tableId}/records?page_size=200`;
+          if (pageToken) url += `&page_token=${pageToken}`;
+          const res = await fetch(url, {
+            headers: {
+              'Authorization': `Bearer ${FEISHU.token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          const data = await res.json();
+          if (data.code !== 0) throw new Error(data.msg || '飞书请求失败');
+          allRecords = allRecords.concat(data.data.items || []);
+          pageToken = data.data.has_more ? data.data.page_token : null;
+        } while (pageToken);
+
+        // 转换飞书数据为内部格式
+        games = allRecords.map(rec => {
+          const f = rec.fields;
+          return {
+            id: rec.record_id,
+            date: f['日期'] || '',
+            winner: f['获胜阵营'] || '',
+            players: Array.isArray(f['参与玩家']) ? f['参与玩家'] : []
+          };
+        });
+
+        document.getElementById('status').innerText = `✅ 已同步 ${games.length} 场对局`;
+      } catch (err) {
+        document.getElementById('status').innerText = '❌ 加载失败，请检查Token或网络';
+        console.error('飞书加载错误：', err);
+      }
+      renderAllStats();
+    }
+
+    async function addGameToFeishu(gameData) {
+      const body = {
+        fields: {
+          '日期': gameData.date,
+          '获胜阵营': gameData.winner,
+          '参与玩家': gameData.players  // 多选字段直接传字符串数组
+        }
+      };
+      try {
+        const res = await fetch(`https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU.baseId}/tables/${FEISHU.tableId}/records`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${FEISHU.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.code !== 0) throw new Error(data.msg || '写入失败');
+        return true;
+      } catch (err) {
+        alert('上传到飞书失败：' + err.message);
+        return false;
+      }
+    }
+
+    // ---------- 战力计算 (ELO简化) ----------
+    function calculateELO() {
+      const eloMap = {};
+      players.forEach(p => eloMap[p.id] = 1000);
+      
+      // 按日期正序计算
+      const sorted = [...games].sort((a,b) => (a.date || '').localeCompare(b.date || ''));
+      sorted.forEach(game => {
+        const names = game.players;
+        const ids = names.map(name => {
+          const found = players.find(p => p.name === name);
+          return found ? found.id : null;
+        }).filter(id => id !== null);
+        if (ids.length < 2) return;
+        
+        // 简化阵营分配：按索引奇偶分
+        const blueIds = ids.filter((_, idx) => idx % 2 === 0);
+        const redIds = ids.filter((_, idx) => idx % 2 !== 0);
+        
+        const avgBlue = blueIds.reduce((sum,id) => sum + (eloMap[id]||1000), 0) / (blueIds.length || 1);
+        const avgRed = redIds.reduce((sum,id) => sum + (eloMap[id]||1000), 0) / (redIds.length || 1);
+        
+        const expectedBlue = 1 / (1 + Math.pow(10, (avgRed - avgBlue) / 400));
+        const K = 16;
+        const scoreChange = game.winner === '好人' ? K * (1 - expectedBlue) : K * (0 - expectedBlue);
+        
+        blueIds.forEach(id => eloMap[id] = (eloMap[id]||1000) + scoreChange);
+        redIds.forEach(id => eloMap[id] = (eloMap[id]||1000) - scoreChange);
+      });
+      return eloMap;
+    }
+
+    function getPlayerStats(playerName) {
+      const playerGames = games.filter(g => g.players.includes(playerName));
+      const wins = playerGames.filter(g => {
+        const idx = g.players.indexOf(playerName);
+        const isBlue = (idx % 2 === 0);
+        return (g.winner === '好人' && isBlue) || (g.winner === '坏人' && !isBlue);
+      }).length;
+      return {
+        total: playerGames.length,
+        wins: wins,
+        winRate: playerGames.length ? (wins / playerGames.length * 100).toFixed(1) : 0
+      };
+    }
+
+    // ---------- 渲染界面 ----------
+    function renderAllStats() {
+      const eloMap = calculateELO();
+      const activePlayers = players.filter(p => p.regular);
+      
+      // 排行榜
+      const sorted = [...activePlayers].sort((a,b) => (eloMap[b.id]||1000) - (eloMap[a.id]||1000));
+      document.getElementById('rankBody').innerHTML = sorted.map((p, idx) => {
+        const stats = getPlayerStats(p.name);
+        return `<tr>
+          <td style="color:#FFD700; font-weight:bold;">#${idx+1}</td>
+          <td>${p.name}</td>
+          <td>${stats.total}</td>
+          <td>${stats.winRate}%</td>
+          <td>${Math.round(eloMap[p.id])}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="5">暂无对局数据</td></tr>';
+
+      // 最近对局
+      const recent = [...games].slice(-10).reverse();
+      document.getElementById('gameHistory').innerHTML = recent.map(g => {
+        return `<div style="margin-bottom:6px; padding:6px; background:#1F1535; border-radius:8px;">
+          <strong>${g.date}</strong> | ${g.winner==='好人'?'🔵好人胜':'🔴坏人胜'} | 参与: ${g.players.join(', ')}
+        </div>`;
+      }).join('') || '<p style="color:#6B5B8C;">暂无对局记录，快去添加一局吧！</p>';
+
+      document.getElementById('totalGames').innerText = games.length;
+      updateSelectedPlayers();
+      renderPlayerSelect();
+    }
+
+    // 个人详情下拉
+    document.getElementById('playerSelect').addEventListener('change', (e) => {
+      const id = parseInt(e.target.value);
+      if (isNaN(id)) {
+        document.getElementById('playerDetail').innerHTML = '';
+        return;
+      }
+      const p = getPlayer(id);
+      if (!p) return;
+      const stats = getPlayerStats(p.name);
+      const eloMap = calculateELO();
+      document.getElementById('playerDetail').innerHTML = `
+        <h3 style="color:#FFD700;">${p.name}</h3>
+        <p>📅 总场次: <strong>${stats.total}</strong></p>
+        <p>🏅 胜场: <strong>${stats.wins}</strong> (胜率 ${stats.winRate}%)</p>
+        <p>⚡ 战力值: <strong>${Math.round(eloMap[id])}</strong></p>
+        <p style="font-size:12px; color:#6B5B8C;">* 阵营基于参与顺序模拟计算</p>
+      `;
+    });
+
+    // 记录对局按钮
+    document.getElementById('addGameBtn').addEventListener('click', async () => {
+      const actives = players.filter(p => p.regular);
+      if (actives.length < 5) {
+        alert('至少需要5名活跃玩家才能开局');
+        return;
+      }
+      const winner = document.getElementById('winnerTeam').value;
+      const date = document.getElementById('gameDate').value || new Date().toISOString().split('T')[0];
+      const playerNames = actives.map(p => p.name);
+      
+      const success = await addGameToFeishu({
+        date: date,
+        winner: winner,
+        players: playerNames
+      });
+      if (success) {
+        await fetchGames();  // 重新拉取确保数据一致
+      }
+    });
+
+    // 手动刷新按钮
+    document.getElementById('refreshBtn').addEventListener('click', fetchGames);
+
+    // 初始化
+    document.getElementById('gameDate').valueAsDate = new Date();
+    renderPlayerList();
+    fetchGames();
+  </script>
+</body>
+</html>
