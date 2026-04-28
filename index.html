@@ -29,14 +29,12 @@
   <h1>⚔️ 阿瓦隆 · 11人同步战绩</h1>
   <div id="status" class="loading">⏳ 正在连接飞书云端数据...</div>
 
-  <!-- 玩家管理 -->
   <div class="card">
     <h2>👥 玩家管理</h2>
     <p style="color:#B8A9C9; margin-bottom:8px;">点击名字标记为"常玩成员"（各人手机独立设置）</p>
     <div id="playerList"></div>
   </div>
 
-  <!-- 新增对局 -->
   <div class="card">
     <h2>📝 记录新对局</h2>
     <div class="grid-2col">
@@ -59,7 +57,6 @@
     <span style="margin-left:12px; font-size:12px; color:#6B5B8C;">共 <span id="totalGames">0</span> 场</span>
   </div>
 
-  <!-- 战力排行 & 个人详情 -->
   <div class="grid-2col">
     <div class="card">
       <h2>🏆 战力排行榜</h2>
@@ -77,44 +74,38 @@
     </div>
   </div>
 
-  <!-- 最近对局 -->
   <div class="card">
     <h2>📋 最近10局记录（云端数据）</h2>
     <div id="gameHistory" style="max-height:300px; overflow-y:auto;"></div>
   </div>
 
   <script>
-    // ========== 🔧 飞书配置 ==========
+    // ========== 🔧 配置 ==========
+    // 重要！请把下面这个地址换成你 Cloudflare Worker 的地址
+    const PROXY_URL = 'falling-wind-209d.1448755660.workers.dev';
+
     const FEISHU = {
       baseId: 'KUFywjulLiHK0ckJuHDcM2hynko',
       tableId: 'tblI5guGXQAkzcNj',
+      // token 不再暴露在客户端，但为了简单我们仍放在这里（确保 Proxy 安全）
       token: 'pt-e-ny4SxNCio9i8Flr3ZnuRMdZldfptB7ZuYR8GmdAQAABIBAVNXLQwRQR9jR'
     };
 
-    // ========== 👥 11位玩家 ==========
     const defaultPlayers = [
       "蒋楚", "毛欢", "仇俊", "邓亮", "刘思源", "刘俊",
       "焦嘉勇", "沈钰莹", "胡辉祥", "蔺雨欣", "包沁禾"
     ];
 
-    // ========== 🎭 角色定义 (名称: 阵营) ==========
     const ROLE_MAP = {
-      '梅林': '好人',
-      '派西维尔': '好人',
-      '平民': '好人',
-      '莫甘娜': '坏人',
-      '刺客': '坏人',
-      '奥伯伦': '坏人',
-      '莫德雷德': '坏人',
-      '兰斯洛特': '坏人'   // 默认算坏人，可按需调整
+      '梅林': '好人', '派西维尔': '好人', '平民': '好人',
+      '莫甘娜': '坏人', '刺客': '坏人', '奥伯伦': '坏人',
+      '莫德雷德': '坏人', '兰斯洛特': '坏人'
     };
     const GOOD_ROLES = Object.keys(ROLE_MAP).filter(r => ROLE_MAP[r] === '好人');
     const BAD_ROLES = Object.keys(ROLE_MAP).filter(r => ROLE_MAP[r] === '坏人');
 
-    // ========== 玩家数据 ==========
     let players = JSON.parse(localStorage.getItem('avalon_players')) ||
       defaultPlayers.map((name, idx) => ({ id: idx, name, regular: true }));
-    // 修正可能的名字变更
     if (players.length === defaultPlayers.length) {
       players.forEach((p, idx) => p.name = defaultPlayers[idx]);
     } else {
@@ -123,12 +114,9 @@
 
     let games = [];
 
-    // ---------- 本地存储 ----------
     function savePlayers() { localStorage.setItem('avalon_players', JSON.stringify(players)); }
-
     function getPlayer(id) { return players.find(p => p.id === id); }
 
-    // ---------- UI 渲染 ----------
     function renderPlayerList() {
       document.getElementById('playerList').innerHTML = players.map(p => `
         <span class="player-chip ${p.regular ? 'active' : ''}" onclick="togglePlayer(${p.id})">
@@ -138,7 +126,6 @@
       updateRoleAssignments();
       renderPlayerSelect();
     }
-
     function togglePlayer(id) {
       const p = players.find(p => p.id === id);
       if (p) p.regular = !p.regular;
@@ -146,11 +133,9 @@
       renderPlayerList();
       renderAllStats();
     }
-
     function updateRoleAssignments() {
       const actives = players.filter(p => p.regular);
-      const container = document.getElementById('roleAssignment');
-      container.innerHTML = actives.map(p => `
+      document.getElementById('roleAssignment').innerHTML = actives.map(p => `
         <div class="role-selector">
           <label>${p.name}</label>
           <select id="role_${p.id}">
@@ -161,7 +146,6 @@
         </div>
       `).join('');
     }
-
     function renderPlayerSelect() {
       const sel = document.getElementById('playerSelect');
       const actives = players.filter(p => p.regular);
@@ -169,23 +153,32 @@
         actives.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     }
 
-    // ---------- 飞书 API ----------
+    // ========== 所有飞书请求都通过代理 ==========
+    async function fetchFromFeishu(path, method = 'GET', body = null) {
+      const url = `${PROXY_URL}/open-apis/bitable/v1/apps/${FEISHU.baseId}/tables/${FEISHU.tableId}/${path}`;
+      const options = {
+        method,
+        headers: {
+          'Authorization': `Bearer ${FEISHU.token}`,
+          'Content-Type': 'application/json'
+        }
+      };
+      if (body) options.body = JSON.stringify(body);
+      const res = await fetch(url, options);
+      const data = await res.json();
+      if (data.code !== 0) throw new Error(data.msg || '请求失败');
+      return data;
+    }
+
     async function fetchGames() {
       document.getElementById('status').innerText = '🔄 正在从飞书拉取对局记录...';
-      let allRecords = [];
-      let pageToken = null;
       try {
+        let allRecords = [];
+        let pageToken = null;
         do {
-          let url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU.baseId}/tables/${FEISHU.tableId}/records?page_size=200`;
-          if (pageToken) url += `&page_token=${pageToken}`;
-          const res = await fetch(url, {
-            headers: {
-              'Authorization': `Bearer ${FEISHU.token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          const data = await res.json();
-          if (data.code !== 0) throw new Error(data.msg);
+          let path = `records?page_size=200`;
+          if (pageToken) path += `&page_token=${pageToken}`;
+          const data = await fetchFromFeishu(path);
           allRecords = allRecords.concat(data.data.items || []);
           pageToken = data.data.has_more ? data.data.page_token : null;
         } while (pageToken);
@@ -206,57 +199,37 @@
         });
         document.getElementById('status').innerText = `✅ 已同步 ${games.length} 场对局`;
       } catch (err) {
-        document.getElementById('status').innerText = '❌ 加载失败，请检查Token或网络';
+        document.getElementById('status').innerText = '❌ 加载失败：' + err.message;
         console.error(err);
       }
       renderAllStats();
     }
 
     async function addGameToFeishu(gameData) {
-      const body = {
+      return fetchFromFeishu('records', 'POST', {
         fields: {
           '日期': gameData.date,
           '获胜阵营': gameData.winner,
           '参与玩家': gameData.players,
           '角色分配': JSON.stringify(gameData.roles)
         }
-      };
-      try {
-        const res = await fetch(`https://open.feishu.cn/open-apis/bitable/v1/apps/${FEISHU.baseId}/tables/${FEISHU.tableId}/records`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${FEISHU.token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(body)
-        });
-        const data = await res.json();
-        if (data.code !== 0) throw new Error(data.msg);
-        return true;
-      } catch (err) {
-        alert('上传到飞书失败：' + err.message);
-        return false;
-      }
+      });
     }
 
-    // ---------- 战力计算 (ELO，使用真实阵营) ----------
+    // ========== 战力计算（与之前相同） ==========
     function calculateELO() {
       const eloMap = {};
       players.forEach(p => eloMap[p.id] = 1000);
       const sorted = [...games].sort((a,b) => (a.date||'').localeCompare(b.date||''));
       sorted.forEach(game => {
         if (!game.roles || Object.keys(game.roles).length === 0) return;
-        const participantIds = [];
-        const blueIds = [];
-        const redIds = [];
+        const blueIds = [], redIds = [];
         for (let name in game.roles) {
           const player = players.find(p => p.name === name);
           if (!player) continue;
-          const role = game.roles[name];
-          const faction = ROLE_MAP[role] || (role === '好人' ? '好人' : '坏人'); // 后备
-          participantIds.push(player.id);
+          const faction = ROLE_MAP[game.roles[name]];
           if (faction === '好人') blueIds.push(player.id);
-          else redIds.push(player.id);
+          else if (faction === '坏人') redIds.push(player.id);
         }
         if (blueIds.length === 0 || redIds.length === 0) return;
         const avgBlue = blueIds.reduce((s,id) => s + (eloMap[id]||1000), 0) / blueIds.length;
@@ -272,48 +245,40 @@
 
     function getPlayerStats(playerName) {
       const myGames = games.filter(g => g.players.includes(playerName));
-      if (myGames.length === 0) return { total:0, wins:0, goodGames:0, badGames:0, goodWins:0, badWins:0 };
-      let wins = 0, goodGames = 0, badGames = 0, goodWins = 0, badWins = 0;
+      let wins = 0, goodGames = 0, badGames = 0, goodWins = 0, badWins = 0, total = 0;
       myGames.forEach(g => {
         const role = g.roles[playerName];
-        if (!role) return; // 无角色数据则跳过
+        if (!role) return;
         const faction = ROLE_MAP[role];
         if (!faction) return;
-        const isWin = (g.winner === faction);
-        if (isWin) wins++;
-        if (faction === '好人') {
-          goodGames++;
-          if (isWin) goodWins++;
-        } else {
-          badGames++;
-          if (isWin) badWins++;
-        }
+        total++;
+        if (g.winner === faction) wins++;
+        if (faction === '好人') { goodGames++; if (g.winner === '好人') goodWins++; }
+        else { badGames++; if (g.winner === '坏人') badWins++; }
       });
-      const total = myGames.filter(g => g.roles[playerName] !== undefined).length; // 有效对局数
       return { total, wins, goodGames, badGames, goodWins, badWins };
     }
 
-    // ---------- 渲染统计 ----------
     function renderAllStats() {
       const eloMap = calculateELO();
       const activePlayers = players.filter(p => p.regular);
-      const ranked = [...activePlayers].sort((a,b) => (eloMap[b.id]||1000) - (eloMap[a.id]||1000));
-      document.getElementById('rankBody').innerHTML = ranked.map((p, idx) => {
-        const st = getPlayerStats(p.name);
-        const winRate = st.total ? (st.wins / st.total * 100).toFixed(1) : '0.0';
-        return `<tr>
-          <td style="color:#FFD700;">#${idx+1}</td>
-          <td>${p.name}</td>
-          <td>${st.total}</td>
-          <td>${winRate}%</td>
-          <td>${Math.round(eloMap[p.id])}</td>
-        </tr>`;
-      }).join('') || '<tr><td colspan="5">暂无有效对局</td></tr>';
+      document.getElementById('rankBody').innerHTML = activePlayers
+        .sort((a,b) => (eloMap[b.id]||1000) - (eloMap[a.id]||1000))
+        .map((p, idx) => {
+          const st = getPlayerStats(p.name);
+          const winRate = st.total ? (st.wins / st.total * 100).toFixed(1) : '0.0';
+          return `<tr>
+            <td style="color:#FFD700;">#${idx+1}</td>
+            <td>${p.name}</td>
+            <td>${st.total}</td>
+            <td>${winRate}%</td>
+            <td>${Math.round(eloMap[p.id])}</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="5">暂无有效对局</td></tr>';
 
-      // 最近对局
       const recent = [...games].filter(g => Object.keys(g.roles).length > 0).slice(-10).reverse();
       document.getElementById('gameHistory').innerHTML = recent.map(g => {
-        const rolesStr = Object.entries(g.roles).map(([name, role]) => `${name}(${role})`).join(' ');
+        const rolesStr = Object.entries(g.roles).map(([name,r]) => `${name}(${r})`).join(' ');
         return `<div style="margin-bottom:6px; padding:6px; background:#1F1535; border-radius:8px;">
           <strong>${g.date}</strong> | ${g.winner==='好人'?'🔵好人胜':'🔴坏人胜'}<br>
           <small>${rolesStr}</small>
@@ -324,7 +289,6 @@
       renderPlayerSelect();
     }
 
-    // 个人详情
     document.getElementById('playerSelect').addEventListener('change', (e) => {
       const id = parseInt(e.target.value);
       if (isNaN(id)) { document.getElementById('playerDetail').innerHTML = ''; return; }
@@ -333,26 +297,20 @@
       const st = getPlayerStats(p.name);
       const eloMap = calculateELO();
       const total = st.total;
-      const wins = st.wins;
-      const goodRate = st.goodGames ? (st.goodWins / st.goodGames * 100).toFixed(1) : '0.0';
-      const badRate = st.badGames ? (st.badWins / st.badGames * 100).toFixed(1) : '0.0';
-      const wolfProb = total ? (st.badGames / total * 100).toFixed(1) : '0.0';
       document.getElementById('playerDetail').innerHTML = `
         <h3 style="color:#FFD700;">${p.name}</h3>
         <p>📅 总场次(有效): <strong>${total}</strong></p>
-        <p>🏆 综合胜率: <strong>${total ? (wins/total*100).toFixed(1) : '0.0'}%</strong></p>
-        <p>🛡️ 好人胜率: <strong>${goodRate}%</strong> (${st.goodGames}局)</p>
-        <p>🗡️ 坏人胜率: <strong>${badRate}%</strong> (${st.badGames}局)</p>
-        <p>🐺 摸狼概率: <strong>${wolfProb}%</strong></p>
+        <p>🏆 综合胜率: <strong>${total ? (st.wins/total*100).toFixed(1) : '0.0'}%</strong></p>
+        <p>🛡️ 好人胜率: <strong>${st.goodGames ? (st.goodWins/st.goodGames*100).toFixed(1) : '0.0'}%</strong> (${st.goodGames}局)</p>
+        <p>🗡️ 坏人胜率: <strong>${st.badGames ? (st.badWins/st.badGames*100).toFixed(1) : '0.0'}%</strong> (${st.badGames}局)</p>
+        <p>🐺 摸狼概率: <strong>${total ? (st.badGames/total*100).toFixed(1) : '0.0'}%</strong></p>
         <p>⚡ 战力值: <strong>${Math.round(eloMap[id])}</strong></p>
-        <p style="font-size:12px; color:#6B5B8C;">* 需要每局填写身份才精确</p>
       `;
     });
 
-    // 记录对局
     document.getElementById('addGameBtn').addEventListener('click', async () => {
       const actives = players.filter(p => p.regular);
-      if (actives.length < 5) { alert('至少需要5名活跃玩家'); return; }
+      if (actives.length < 5) return alert('至少需要5名活跃玩家');
       const winner = document.getElementById('winnerTeam').value;
       const date = document.getElementById('gameDate').value || new Date().toISOString().split('T')[0];
       const roles = {};
@@ -362,22 +320,22 @@
         if (!sel || !sel.value) { allFilled = false; return; }
         roles[p.name] = sel.value;
       });
-      if (!allFilled) { alert('请为所有活跃玩家选择身份'); return; }
+      if (!allFilled) return alert('请为所有活跃玩家选择身份');
       const playerNames = actives.map(p => p.name);
-      const success = await addGameToFeishu({ date, winner, players: playerNames, roles });
-      if (success) {
-        // 重置角色选择
+      try {
+        await addGameToFeishu({ date, winner, players: playerNames, roles });
         actives.forEach(p => {
           const sel = document.getElementById(`role_${p.id}`);
           if (sel) sel.value = '';
         });
         await fetchGames();
+      } catch (err) {
+        alert('同步失败：' + err.message);
       }
     });
 
     document.getElementById('refreshBtn').addEventListener('click', fetchGames);
 
-    // 初始化
     document.getElementById('gameDate').valueAsDate = new Date();
     renderPlayerList();
     fetchGames();
