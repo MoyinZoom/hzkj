@@ -3,40 +3,44 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>阿瓦隆战绩 · 11人同步版</title>
+  <title>阿瓦隆战绩 · 10人同步版</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:#1A0F2A; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color:#FFF; padding:20px; max-width:800px; margin:auto; }
-    h1,h2 { color:#FFD700; margin-bottom:0.5em; }
+    body { background:#1A0F2A; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color:#FFF; padding:20px; max-width:900px; margin:auto; }
+    h1,h2,h3 { color:#FFD700; margin-bottom:0.4em; }
     .card { background: rgba(26,15,42,0.8); border:1px solid #7B5BA8; border-radius:12px; padding:20px; margin-bottom:20px; }
-    select,input,button { background:#1F1535; color:#FFF; border:1px solid #7B5BA8; border-radius:8px; padding:8px 12px; margin:4px 0; font-size:14px; width:100%; }
-    button { background:#7B5BA8; font-weight:bold; cursor:pointer; border:none; width:auto; display:inline-block; margin-right:8px; }
+    select,input,button,label { font-size:14px; }
+    select,input { background:#1F1535; color:#FFF; border:1px solid #7B5BA8; border-radius:8px; padding:8px 12px; margin:4px 0; width:100%; }
+    button { background:#7B5BA8; color:#FFF; font-weight:bold; cursor:pointer; border:none; border-radius:8px; padding:10px 16px; margin:4px; }
     button:hover { background:#FFD700; color:#1A0F2A; }
     .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap:20px; }
     .player-chip { display:inline-block; background:#2a1f3a; border:1px solid #5A4BFF; border-radius:20px; padding:6px 12px; margin:4px; cursor:pointer; }
     .player-chip.active { background:#FFD700; color:#1A0F2A; border-color:#FFD700; }
-    table { width:100%; border-collapse:collapse; margin-top:10px; }
-    th,td { padding:10px 8px; border-bottom:1px solid #5A4BFF; text-align:center; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:14px; }
+    th,td { padding:8px 6px; border-bottom:1px solid #5A4BFF; text-align:center; }
     th { color:#FFD700; }
     .role-selector { display:flex; align-items:center; justify-content:space-between; margin:6px 0; }
     .role-selector label { flex:1; margin-right:10px; }
     .role-selector select { flex:2; }
     .loading { color:#FFD700; text-align:center; padding:20px; }
+    .event-option { margin:8px 0; }
+    .small-text { font-size:12px; color:#B8A9C9; }
+    .highlight { color:#FFD700; font-weight:bold; }
     @media (max-width:768px) { .grid-2col { grid-template-columns: 1fr; } }
   </style>
-  <!-- 提前加载 Supabase SDK，确保后续脚本能使用 -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-  <h1>⚔️ 阿瓦隆 · 11人同步战绩</h1>
-  <div id="status" class="loading">⏳ 正在加载云端数据...</div>
+  <h1>⚔️ 阿瓦隆 · 10人同步战绩</h1>
+  <div id="status" class="loading">⏳ 正在加载本地数据...</div>
 
+  <!-- 玩家管理 -->
   <div class="card">
     <h2>👥 玩家管理</h2>
-    <p style="color:#B8A9C9; margin-bottom:8px;">点击名字标记为“常玩成员”（各人手机独立设置）</p>
+    <p class="small-text">点击名字切换“常玩成员”（各人手机独立保存）</p>
     <div id="playerList"></div>
   </div>
 
+  <!-- 记录新对局 -->
   <div class="card">
     <h2>📝 记录新对局</h2>
     <div class="grid-2col">
@@ -52,48 +56,64 @@
         </select>
       </div>
     </div>
+
     <p style="margin-top:10px;"><strong>每位队员的身份：</strong></p>
     <div id="roleAssignment"></div>
-    <button id="addGameBtn">✅ 记录这局（同步到云端）</button>
-    <button id="refreshBtn">🔄 手动刷新</button>
-    <span style="margin-left:12px; font-size:12px; color:#6B5B8C;">共 <span id="totalGames">0</span> 场</span>
+
+    <!-- 结束方式 & 刺杀目标 -->
+    <div id="endCondition" style="margin-top:12px; border-top:1px solid #5A4BFF; padding-top:10px;">
+      <label><strong>🔚 结束方式：</strong></label>
+      <div id="badEndOptions" style="display:none;">
+        <label><input type="checkbox" id="threeFailCheck"> 三炸车获胜（任务直接失败，无刺杀）</label>
+        <p class="small-text" id="assassinMerlinHint" style="display:none;">未勾选三炸车：默认刺客刺中梅林。</p>
+      </div>
+      <div id="goodEndOptions" style="display:none;">
+        <label>被刺杀玩家（好人因此获胜）：</label>
+        <select id="assassinatedPlayerSelect">
+          <option value="">-- 请选择 --</option>
+        </select>
+        <p class="small-text">刺中奥伯伦或平民将触发额外修正。</p>
+      </div>
+    </div>
+
+    <div style="margin-top:15px;">
+      <button id="addGameBtn">✅ 记录这局（保存到本地）</button>
+      <button id="refreshBtn">🔄 手动刷新</button>
+      <span class="small-text" style="margin-left:10px;">共 <span id="totalGames">0</span> 场</span>
+    </div>
   </div>
 
+  <!-- 战力榜 & 个人详情 -->
   <div class="grid-2col">
     <div class="card">
       <h2>🏆 战力排行榜</h2>
       <table>
-        <thead><tr><th>排名</th><th>玩家</th><th>场次</th><th>胜率</th><th>战力值</th></tr></thead>
+        <thead><tr><th>排名</th><th>玩家</th><th>场次</th><th>胜率</th><th>战力</th></tr></thead>
         <tbody id="rankBody"></tbody>
       </table>
     </div>
     <div class="card">
-      <h2>📊 个人统计详情</h2>
-      <select id="playerSelect" style="width:100%; margin-bottom:10px;">
+      <h2>📊 个人统计</h2>
+      <select id="playerSelect" style="width:100%;">
         <option value="">-- 选择玩家 --</option>
       </select>
       <div id="playerDetail"></div>
     </div>
   </div>
 
+  <!-- 最近对局 -->
   <div class="card">
-    <h2>📋 最近10局记录（云端数据）</h2>
+    <h2>📋 最近10局</h2>
     <div id="gameHistory" style="max-height:300px; overflow-y:auto;"></div>
   </div>
 
   <script>
-    // ==================== 你的 Supabase 凭证 ====================
-    const SUPABASE_URL = 'https://ouwmvfgoovgfhfuvfkof.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_hQWTtPTA1TcgsFrhRN2Ekw_kV3hVjZI'; // 这里填你的 Publishable Key
-    // ============================================================
-
-    const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
+    // ========== 常量 ==========
     const defaultPlayers = [
       "蒋楚", "毛欢", "仇俊", "邓亮", "刘思源", "刘俊",
       "焦嘉勇", "沈钰莹", "胡辉祥", "蔺雨欣", "包沁禾"
     ];
-
+    // 角色阵营映射（兰斯洛特暂算坏人）
     const ROLE_MAP = {
       '梅林': '好人', '派西维尔': '好人', '平民': '好人',
       '莫甘娜': '坏人', '刺客': '坏人', '奥伯伦': '坏人',
@@ -102,19 +122,69 @@
     const GOOD_ROLES = Object.keys(ROLE_MAP).filter(r => ROLE_MAP[r] === '好人');
     const BAD_ROLES = Object.keys(ROLE_MAP).filter(r => ROLE_MAP[r] === '坏人');
 
+    // ========== 额外修正规则 (10人局：4狼6好，其中梅林+派+4平民) ==========
+    const BONUS = {
+      three_fail: {
+        desc: '三炸车',
+        apply: (playerName, roles, assassinated) => {
+          const role = roles[playerName];
+          if (role === '梅林' || role === '派西维尔') return -4;
+          if (role === '平民') return -2;
+          if (BAD_ROLES.includes(role)) return 4;
+          return 0;
+        }
+      },
+      assassin_merlin: { desc: '刺梅林', apply: () => 0 },
+      assassin_oberon: {
+        desc: '刺奥伯伦',
+        apply: (playerName, roles, assassinated) => {
+          const role = roles[playerName];
+          if (role === '梅林' || role === '派西维尔') return 4;
+          if (role === '平民') return 2;
+          if (BAD_ROLES.includes(role)) return -4;
+          return 0;
+        }
+      },
+      assassin_civilian: {
+        desc: '刺平民(挡刀)',
+        apply: (playerName, roles, assassinated) => {
+          const role = roles[playerName];
+          if (playerName === assassinated && role === '平民') return 4;
+          if (role === '平民') return 0;
+          if (role === '梅林' || role === '派西维尔') return 2;
+          if (BAD_ROLES.includes(role)) return -2;
+          return 0;
+        }
+      },
+      merlin_pretends_percival: {
+        desc: '梅林跳派挡刀',
+        apply: (playerName, roles, assassinated) => {
+          const role = roles[playerName];
+          if (playerName === assassinated && role === '平民') return 4;
+          if (role === '平民') return 0;
+          if (role === '梅林' || role === '派西维尔') return 4;
+          if (BAD_ROLES.includes(role)) return -3;
+          return 0;
+        }
+      }
+    };
+
+    // ========== 本地数据管理 ==========
     let players = JSON.parse(localStorage.getItem('avalon_players')) ||
       defaultPlayers.map((name, idx) => ({ id: idx, name, regular: true }));
+    // 同步名字
     if (players.length === defaultPlayers.length) {
       players.forEach((p, idx) => p.name = defaultPlayers[idx]);
     } else {
       players = defaultPlayers.map((name, idx) => ({ id: idx, name, regular: true }));
     }
-
-    let games = [];
+    let games = JSON.parse(localStorage.getItem('avalon_games') || '[]');
 
     function savePlayers() { localStorage.setItem('avalon_players', JSON.stringify(players)); }
+    function saveGames() { localStorage.setItem('avalon_games', JSON.stringify(games)); }
     function getPlayer(id) { return players.find(p => p.id === id); }
 
+    // ========== UI 渲染 ==========
     function renderPlayerList() {
       document.getElementById('playerList').innerHTML = players.map(p => `
         <span class="player-chip ${p.regular ? 'active' : ''}" onclick="togglePlayer(${p.id})">
@@ -122,8 +192,10 @@
         </span>
       `).join('');
       updateRoleAssignments();
+      updateEndCondition();
       renderPlayerSelect();
     }
+
     function togglePlayer(id) {
       const p = players.find(p => p.id === id);
       if (p) p.regular = !p.regular;
@@ -131,72 +203,79 @@
       renderPlayerList();
       renderAllStats();
     }
+
     function updateRoleAssignments() {
       const actives = players.filter(p => p.regular);
       document.getElementById('roleAssignment').innerHTML = actives.map(p => `
         <div class="role-selector">
           <label>${p.name}</label>
           <select id="role_${p.id}">
-            <option value="">-- 选择身份 --</option>
-            ${GOOD_ROLES.map(r => `<option value="${r}">${r} (好人)</option>`).join('')}
-            ${BAD_ROLES.map(r => `<option value="${r}">${r} (坏人)</option>`).join('')}
+            <option value="">-- 身份 --</option>
+            ${[...GOOD_ROLES, ...BAD_ROLES].map(r => `<option value="${r}">${r}</option>`).join('')}
           </select>
         </div>
       `).join('');
     }
+
+    function updateEndCondition() {
+      const winner = document.getElementById('winnerTeam').value;
+      const badDiv = document.getElementById('badEndOptions');
+      const goodDiv = document.getElementById('goodEndOptions');
+      const merlinHint = document.getElementById('assassinMerlinHint');
+      const threeFail = document.getElementById('threeFailCheck');
+
+      if (winner === '坏人') {
+        badDiv.style.display = 'block';
+        goodDiv.style.display = 'none';
+        merlinHint.style.display = threeFail.checked ? 'none' : 'block';
+      } else {
+        badDiv.style.display = 'none';
+        goodDiv.style.display = 'block';
+        const sel = document.getElementById('assassinatedPlayerSelect');
+        const actives = players.filter(p => p.regular);
+        sel.innerHTML = '<option value="">-- 选择被刺玩家 --</option>' +
+          actives.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+      }
+    }
+
+    document.getElementById('winnerTeam').addEventListener('change', updateEndCondition);
+    document.getElementById('threeFailCheck').addEventListener('change', updateEndCondition);
+
     function renderPlayerSelect() {
       const sel = document.getElementById('playerSelect');
       const actives = players.filter(p => p.regular);
-      sel.innerHTML = '<option value="">-- 选择玩家 --</option>' + 
+      sel.innerHTML = '<option value="">-- 选择玩家 --</option>' +
         actives.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     }
 
-    // ==================== Supabase 数据操作 ====================
-    async function fetchGames() {
-      document.getElementById('status').innerText = '🔄 正在加载云端数据...';
-      try {
-        const { data, error } = await _supabase
-          .from('games')
-          .select('*')
-          .order('date', { ascending: false })
-          .limit(1000);
-
-        if (error) throw error;
-
-        games = data.map(rec => ({
-          id: rec.id,
-          date: rec.date || '',
-          winner: rec.winner || '',
-          players: rec.players || [],
-          roles: rec.roles || {}
-        }));
-        document.getElementById('status').innerText = `✅ 已加载 ${games.length} 场对局`;
-      } catch (err) {
-        document.getElementById('status').innerText = '❌ 加载失败：' + err.message;
-        console.error(err);
-      }
-      renderAllStats();
+    // ========== 事件类型判定 ==========
+    function determineEventType(winner, threeFail, assassinated, roles) {
+      if (winner === '坏人' && threeFail) return 'three_fail';
+      if (winner === '坏人') return 'assassin_merlin';
+      if (!assassinated) return '';
+      const role = roles[assassinated];
+      if (role === '奥伯伦') return 'assassin_oberon';
+      // 普通平民挡刀 or 梅林跳派挡刀（这里简化：只要刺客刺中平民就默认普通挡刀，
+      // 如需区分梅林跳派，可增加一个复选框，这里先按普通挡刀处理）
+      if (role === '平民') return 'assassin_civilian';  // 可将此改为 'merlin_pretends_percival' 如果需要，暂时按普通挡刀
+      return '';
     }
 
-    async function addGameToSupabase(gameData) {
-      const { error } = await _supabase
-        .from('games')
-        .insert([
-          {
-            date: gameData.date,
-            winner: gameData.winner,
-            players: gameData.players,
-            roles: gameData.roles
-          }
-        ]);
-      if (error) throw error;
+    // 如需区分梅林跳派，可自行修改上述判断，或增加额外复选框
+
+    // ========== 额外修正计算 ==========
+    function getExtraModifier(playerName, game) {
+      const event = BONUS[game.event_type];
+      if (!event) return 0;
+      return event.apply(playerName, game.roles, game.assassinated_player);
     }
 
-    // ==================== ELO 与统计 ====================
+    // ========== ELO 计算（基础 + 额外修正）==========
     function calculateELO() {
       const eloMap = {};
       players.forEach(p => eloMap[p.id] = 1000);
       const sorted = [...games].sort((a,b) => (a.date||'').localeCompare(b.date||''));
+
       sorted.forEach(game => {
         if (!game.roles || Object.keys(game.roles).length === 0) return;
         const blueIds = [], redIds = [];
@@ -208,13 +287,24 @@
           else if (faction === '坏人') redIds.push(player.id);
         }
         if (blueIds.length === 0 || redIds.length === 0) return;
+
         const avgBlue = blueIds.reduce((s,id) => s + (eloMap[id]||1000), 0) / blueIds.length;
         const avgRed = redIds.reduce((s,id) => s + (eloMap[id]||1000), 0) / redIds.length;
         const expectedBlue = 1 / (1 + Math.pow(10, (avgRed - avgBlue) / 400));
         const K = 16;
-        const scoreChange = game.winner === '好人' ? K * (1 - expectedBlue) : K * (0 - expectedBlue);
-        blueIds.forEach(id => eloMap[id] = (eloMap[id]||1000) + scoreChange);
-        redIds.forEach(id => eloMap[id] = (eloMap[id]||1000) - scoreChange);
+        const baseChange = game.winner === '好人' ? K * (1 - expectedBlue) : K * (0 - expectedBlue);
+
+        // 基础变动
+        blueIds.forEach(id => eloMap[id] += baseChange);
+        redIds.forEach(id => eloMap[id] -= baseChange);
+
+        // 额外修正
+        for (let name in game.roles) {
+          const player = players.find(p => p.name === name);
+          if (!player) continue;
+          const extra = getExtraModifier(name, game);
+          eloMap[player.id] += extra;
+        }
       });
       return eloMap;
     }
@@ -235,6 +325,20 @@
       return { total, wins, goodGames, badGames, goodWins, badWins };
     }
 
+    function getExtraSummary(playerName) {
+      const summary = {};
+      games.forEach(g => {
+        if (!g.players.includes(playerName)) return;
+        const extra = getExtraModifier(playerName, g);
+        if (extra !== 0) {
+          const desc = BONUS[g.event_type] ? BONUS[g.event_type].desc : '未知';
+          summary[desc] = (summary[desc] || 0) + extra;
+        }
+      });
+      return summary;
+    }
+
+    // ========== 渲染统计 ==========
     function renderAllStats() {
       const eloMap = calculateELO();
       const activePlayers = players.filter(p => p.regular);
@@ -244,27 +348,30 @@
           const st = getPlayerStats(p.name);
           const winRate = st.total ? (st.wins / st.total * 100).toFixed(1) : '0.0';
           return `<tr>
-            <td style="color:#FFD700;">#${idx+1}</td>
+            <td class="highlight">#${idx+1}</td>
             <td>${p.name}</td>
             <td>${st.total}</td>
             <td>${winRate}%</td>
             <td>${Math.round(eloMap[p.id])}</td>
           </tr>`;
-        }).join('') || '<tr><td colspan="5">暂无有效对局</td></tr>';
+        }).join('') || '<tr><td colspan="5">暂无对局</td></tr>';
 
+      // 最近对局
       const recent = [...games].filter(g => Object.keys(g.roles).length > 0).slice(-10).reverse();
       document.getElementById('gameHistory').innerHTML = recent.map(g => {
-        const rolesStr = Object.entries(g.roles).map(([name,r]) => `${name}(${r})`).join(' ');
+        const rolesStr = Object.entries(g.roles).map(([n,r]) => `${n}(${r})`).join(' ');
+        const eventStr = BONUS[g.event_type] ? ' ' + BONUS[g.event_type].desc : '';
         return `<div style="margin-bottom:6px; padding:6px; background:#1F1535; border-radius:8px;">
-          <strong>${g.date}</strong> | ${g.winner==='好人'?'🔵好人胜':'🔴坏人胜'}<br>
+          <strong>${g.date}</strong> | ${g.winner==='好人'?'🔵好人胜':'🔴坏人胜'}${eventStr}<br>
           <small>${rolesStr}</small>
         </div>`;
-      }).join('') || '<p style="color:#6B5B8C;">暂无有效对局（请添加包含角色数据的对局）</p>';
+      }).join('') || '<p class="small-text">暂无对局记录</p>';
 
       document.getElementById('totalGames').innerText = games.length;
       renderPlayerSelect();
     }
 
+    // 个人详情（含额外修正明细）
     document.getElementById('playerSelect').addEventListener('change', (e) => {
       const id = parseInt(e.target.value);
       if (isNaN(id)) { document.getElementById('playerDetail').innerHTML = ''; return; }
@@ -272,23 +379,31 @@
       if (!p) return;
       const st = getPlayerStats(p.name);
       const eloMap = calculateELO();
-      const total = st.total;
+      const extraSummary = getExtraSummary(p.name);
+      const extraHtml = Object.entries(extraSummary).length > 0
+        ? '<p style="font-size:13px; margin-top:8px;">📌 额外修正累计：<br>' +
+          Object.entries(extraSummary).map(([desc, val]) => `${desc}：${val>0?'+'+val:val}分`).join('<br>') + '</p>'
+        : '<p class="small-text">无额外修正记录</p>';
+
       document.getElementById('playerDetail').innerHTML = `
-        <h3 style="color:#FFD700;">${p.name}</h3>
-        <p>📅 有效对局: <strong>${total}</strong></p>
-        <p>🏆 综合胜率: <strong>${total ? (st.wins/total*100).toFixed(1) : '0.0'}%</strong></p>
+        <h3>${p.name}</h3>
+        <p>📅 有效对局: <strong>${st.total}</strong></p>
+        <p>🏆 综合胜率: <strong>${st.total ? (st.wins/st.total*100).toFixed(1) : '0.0'}%</strong></p>
         <p>🛡️ 好人胜率: <strong>${st.goodGames ? (st.goodWins/st.goodGames*100).toFixed(1) : '0.0'}%</strong> (${st.goodGames}局)</p>
         <p>🗡️ 坏人胜率: <strong>${st.badGames ? (st.badWins/st.badGames*100).toFixed(1) : '0.0'}%</strong> (${st.badGames}局)</p>
-        <p>🐺 摸狼概率: <strong>${total ? (st.badGames/total*100).toFixed(1) : '0.0'}%</strong></p>
         <p>⚡ 战力值: <strong>${Math.round(eloMap[id])}</strong></p>
+        ${extraHtml}
       `;
     });
 
-    document.getElementById('addGameBtn').addEventListener('click', async () => {
+    // ========== 记录对局 ==========
+    document.getElementById('addGameBtn').addEventListener('click', () => {
       const actives = players.filter(p => p.regular);
-      if (actives.length < 5) return alert('至少需要5名活跃玩家');
+      if (actives.length < 5) return alert('至少需5名活跃玩家');
       const winner = document.getElementById('winnerTeam').value;
       const date = document.getElementById('gameDate').value || new Date().toISOString().split('T')[0];
+
+      // 收集角色
       const roles = {};
       let allFilled = true;
       actives.forEach(p => {
@@ -297,24 +412,45 @@
         roles[p.name] = sel.value;
       });
       if (!allFilled) return alert('请为所有活跃玩家选择身份');
-      const playerNames = actives.map(p => p.name);
-      try {
-        await addGameToSupabase({ date, winner, players: playerNames, roles });
-        actives.forEach(p => {
-          const sel = document.getElementById(`role_${p.id}`);
-          if (sel) sel.value = '';
-        });
-        await fetchGames();
-      } catch (err) {
-        alert('同步失败：' + err.message);
+
+      const threeFail = document.getElementById('threeFailCheck').checked;
+      const assassinated = winner === '好人' ? document.getElementById('assassinatedPlayerSelect').value : '';
+      if (winner === '好人' && !assassinated) return alert('请选择被刺玩家');
+
+      // 防止好人刺中梅林
+      if (winner === '好人' && roles[assassinated] === '梅林') {
+        return alert('好人不可能因刺中梅林获胜，请检查被刺玩家');
       }
+
+      const event_type = determineEventType(winner, threeFail, assassinated, roles);
+
+      const gameData = {
+        date, winner, players: actives.map(p => p.name), roles,
+        event_type, assassinated_player: assassinated
+      };
+
+      // 保存到本地
+      games.push(gameData);
+      saveGames();
+
+      // 重置表单
+      document.getElementById('threeFailCheck').checked = false;
+      document.getElementById('assassinatedPlayerSelect').value = '';
+      updateEndCondition();
+      renderAllStats();
+      alert('✅ 对局已保存！（仅保存在当前设备）');
     });
 
-    document.getElementById('refreshBtn').addEventListener('click', fetchGames);
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      games = JSON.parse(localStorage.getItem('avalon_games') || '[]');
+      renderAllStats();
+    });
 
+    // 初始化
     document.getElementById('gameDate').valueAsDate = new Date();
     renderPlayerList();
-    fetchGames();
+    renderAllStats();
+    document.getElementById('status').innerText = '✅ 本地数据已就绪';
   </script>
 </body>
 </html>
